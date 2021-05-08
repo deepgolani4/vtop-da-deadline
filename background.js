@@ -6,7 +6,7 @@ chrome.webRequest.onCompleted.addListener(
       "https://vtop.vit.ac.in/vtop/examinations/doDigitalAssignment"
     ) {
       // This line adds the content script to the page as vtop uses history.push() to remove history.
-      // chrome.tabs.executeScript(null, { file: "content.js" });
+      chrome.tabs.executeScript(null, { file: "content.js" });
       chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         chrome.tabs.sendMessage(tabs[0].id, { urlVisited: true });
       });
@@ -16,9 +16,26 @@ chrome.webRequest.onCompleted.addListener(
 );
 
 function calendar(date, event) {
+  var map = {
+    Jan: "01",
+    Feb: "02",
+    Mar: "03",
+    Apr: "04",
+    May: "05",
+    Jun: "06",
+    Jul: "07",
+    Aug: "08",
+    Sep: "09",
+    Sept: "09",
+    Oct: "10",
+    Nov: "11",
+    Dec: "12",
+  };
+  var tmp = date.split("-");
+  var dte = `${tmp[2]}-${map[tmp[1]]}-${tmp[0]}`;
+  console.log(date, dte);
   return new Promise((resolve) => {
     chrome.identity.getAuthToken({ interactive: true }, async function (token) {
-      console.log(token);
       await fetch(
         "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all&sendNotifications=true&alt=json&key=AIzaSyDPdTOzaUqLP_c08kWOu4QWSSyKEgnAwsM",
         {
@@ -29,10 +46,10 @@ function calendar(date, event) {
           },
           body: JSON.stringify({
             end: {
-              dateTime: date + "T23:59:00.000+05:30",
+              dateTime: dte + "T23:59:00.000+05:30",
             },
             start: {
-              dateTime: date + "T23:00:00.000+05:30",
+              dateTime: dte + "T23:00:00.000+05:30",
             },
             eventType: "default",
             description: event,
@@ -40,7 +57,9 @@ function calendar(date, event) {
           }),
         }
       )
-        .then((res) => res.json())
+        .then(async (res) => {
+          return res.json();
+        })
         .then((data) => {
           resolve();
           console.log(data);
@@ -49,25 +68,22 @@ function calendar(date, event) {
   });
 }
 
-function find_right_due(table_inner, DOM) {
+function get_dates(table_inner) {
   return new Promise((resolve) => {
+    var dates = [];
     for (let i = 0; i < table_inner.children.length; i++) {
       var check = table_inner.children[i].children[6].children[0].innerHTML;
-      if (check === "") {
-        var dwnld = table_inner.children[i].children[5].children.length;
-        resolve({
-          due: table_inner.children[i].children[4].children[0].innerHTML,
-          download:
-            dwnld > 0
-              ? table_inner.children[i].children[5].children[0].children[0]
-              : DOM.createElement("div"),
+      if (
+        check === "" &&
+        table_inner.children[i].children[4].children[0].innerHTML !== "-"
+      ) {
+        dates.push({
+          name: table_inner.children[i].children[1].innerHTML,
+          date: table_inner.children[i].children[4].children[0].innerHTML,
         });
       }
     }
-    resolve({
-      due: "Nothing Left. Cheers!",
-      download: DOM.createElement("div"),
-    });
+    resolve(dates);
   });
 }
 
@@ -75,57 +91,54 @@ async function assignments(DOM) {
   try {
     var regNo = DOM.getElementById("authorizedIDX").value;
     var table = DOM.getElementsByClassName("customTable")[0].children[0];
-    console.log(regNo, table);
-    var now_ = new Date().getTime();
-    // var dis = DOM.getElementsByClassName("icon-button");
-    // for (let i = 0; i < dis.length; i++) {
-    //   dis[i].disabled = true;
-    // }
-    console.log(table.children.length);
     for (let i = 1; i < table.children.length; i++) {
       var classid = table.children[i].children[1].innerHTML;
-      console.log(classid);
-      if (/*table.children[i].children[3].children.length != */ 1) {
-        await fetch(
-          "https://vtop.vit.ac.in/vtop/examinations/processDigitalAssignment",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/x-www-form-urlencoded; charset=UTF-8",
-              "X-Requested-With": "XMLHttpRequest",
-            },
-            body: `authorizedID=${regNo}&x=${new Date().toGMTString()}&classId=${classid}`,
-          }
-        )
-          .then((res) => res.text())
-          .then(async (data) => {
-            var parser = new DOMParser();
-            var doc = parser.parseFromString(data, "text/html");
+      console.log(table.children[i].children[3].children);
 
-            var table_inner = doc.getElementsByClassName("customTable")[1]
-              .children[1];
+      table.children[i].children[3].children.length !== 0 &&
+        table.children[i].children[3].children[0].remove();
+      var desc_str =
+        table.children[i].children[3].textContent.trim() +
+        " " +
+        table.children[i].children[4].innerHTML;
+      console.log(desc_str);
+      await fetch(
+        "https://vtop.vit.ac.in/vtop/examinations/processDigitalAssignment",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: `authorizedID=${regNo}&x=${new Date().toGMTString()}&classId=${classid}`,
+        }
+      )
+        .then((res) => res.text())
+        .then(async (data) => {
+          var parser = new DOMParser();
+          var doc = parser.parseFromString(data, "text/html");
 
-            var due_date = await find_right_due(table_inner, DOM)
-              .then((data) => data)
-              .catch((err) => console.log(err));
-            // var due = new Date(due_date.due.replace(/-/g, " ")).getTime();
-            // var color =
-            //   (due - now_) / (3600 * 24 * 1000) <= 2 ? "red" : "green";
-            // table.children[
-            //   i
-            // ].children[3].innerHTML += `<span style="display:inline; float:right; color:${color};">${due_date.due}</span>`;
-            // table.children[i].children[3].children[0].appendChild(
-            //   due_date.download
-            // );
-            console.log(due_date);
-          })
-          .catch((err) => console.log(err));
-      }
+          var table_inner = doc.getElementsByClassName("customTable")[1]
+            .children[1];
+
+          var due_date = await get_dates(table_inner)
+            .then((data) => data)
+            .catch((err) => console.log(err));
+
+          due_date.length > 0 &&
+            due_date.forEach(async (due) => {
+              await calendar(due.date, `${desc_str} ${due.name}`);
+            });
+
+          chrome.notifications.create("Done", {
+            type: "basic",
+            iconUrl: "logo.png",
+            title: "Sync done for" + classid,
+            message: classid,
+          });
+        })
+        .catch((err) => console.log(err));
     }
-    // for (let i = 0; i < dis.length; i++) {
-    //   dis[i].disabled = false;
-    // }
   } catch (err) {
     console.log(err);
   }
@@ -137,10 +150,8 @@ chrome.runtime.onMessage.addListener(async function (
   sendResponse
 ) {
   if (request.sync) {
-    console.log(request);
     var parser = new DOMParser();
     var DOM = parser.parseFromString(request.DOM, "text/html");
-    console.log("Starting", DOM);
     assignments(DOM);
   }
 });
